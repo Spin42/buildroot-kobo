@@ -1,4 +1,3 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Marc Lainez <marc.lainez@gmail.com>
 Date: Wed, 25 Dec 2025 14:30:00 +0100
 Subject: [PATCH] mediatek: Fix missing include paths in EMI, HWTCON and LED

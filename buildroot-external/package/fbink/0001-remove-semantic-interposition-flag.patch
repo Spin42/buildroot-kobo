@@ -1,4 +1,4 @@
-From: Buildroot User <buildroot@localhost>
+From: Marc Lainez <marc.lainez@gmail.com>
 Date: Thu, 21 Nov 2025 16:00:00 +0100
 Subject: [PATCH] Remove -fno-semantic-interposition for cross-compilation compatibility
 
