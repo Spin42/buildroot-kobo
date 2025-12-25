@@ -1,0 +1,28 @@
+config BR2_PACKAGE_FBINK
+    bool "fbink"
+    depends on BR2_TOOLCHAIN_HAS_THREADS  # FBInk uses pthreads
+    depends on BR2_USE_MMU                # Framebuffer access requires MMU
+    # FBInk uses its own submodules to avoid version conflicts
+    help
+      Low-level framebuffer utility for E Ink devices (Kindle/Kobo).
+      Supports text/image rendering, partial updates, and waveform control.
+
+      https://github.com/NiLuJe/FBInk
+
+if BR2_PACKAGE_FBINK
+config BR2_PACKAGE_FBINK_STATIC
+    bool "Build statically"
+    help
+      Statically link FBInk (larger binary, no runtime deps).
+
+config BR2_PACKAGE_FBINK_FONTS
+    bool "Install built-in fonts"
+    default y
+    help
+      Install FBInk's default bitmapped fonts (8x8, etc.).
+
+config BR2_PACKAGE_FBINK_TOOLS
+    bool "Install helper tools (i2c, etc.)"
+    help
+      Install additional hardware tools (e.g., i2c-tools for Kindle).
+endif

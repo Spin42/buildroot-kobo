@@ -1,0 +1,56 @@
+#!/bin/sh
+
+set -eu
+
+USB_IP="10.0.42.1/24"
+USB_INTERFACE="usb0"
+HOST_MAC="02:12:34:56:78:9b"
+DEV_MAC="02:12:34:56:78:9a"
+
+wait_usb_interface() {
+	try=0
+	while [ "$try" -lt 50 ]; do
+		if ip link show "$USB_INTERFACE" >/dev/null 2>&1; then
+			return 0
+		fi
+		sleep 0.1
+		try=$((try + 1))
+	done
+	return 1
+}
+
+set_interface() {
+	ip link set "$USB_INTERFACE" up || true
+	ip addr replace "$USB_IP" dev "$USB_INTERFACE" || true
+}
+
+start() {
+	if ip link show "$USB_INTERFACE" >/dev/null 2>&1; then
+		set_interface
+		exit 0
+	fi
+
+	modprobe usb_f_ecm
+	modprobe g_ether host_addr="$HOST_MAC" dev_addr="$DEV_MAC" 2>/dev/null || true
+
+	if wait_usb_interface; then
+		set_interface
+	fi
+}
+
+stop() {
+	if ip link show "$USB_INTERFACE" >/dev/null 2>&1; then
+		ip addr flush dev "$USB_INTERFACE" || true
+		ip link set "$USB_INTERFACE" down || true
+	fi
+}
+
+case "${1:-}" in
+	start) start ;;
+	stop) stop ;;
+	restart) stop; start ;;
+	*)
+		echo "Usage: $0 {start|stop|restart}" >&2
+		exit 1
+		;;
+	esac

@@ -1,0 +1,13 @@
+# Override defaults to make headless USB-SSH easy.
+# NOTE: this allows password-based root login.
+
+Port 22
+ListenAddress 0.0.0.0
+Protocol 2
+
+PermitRootLogin yes
+PasswordAuthentication yes
+ChallengeResponseAuthentication no
+UsePAM no
+
+Subsystem sftp /usr/libexec/sftp-server

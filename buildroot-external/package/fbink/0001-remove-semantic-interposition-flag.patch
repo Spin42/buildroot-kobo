@@ -1,0 +1,25 @@
+From: Buildroot User <buildroot@localhost>
+Date: Thu, 21 Nov 2025 16:00:00 +0100
+Subject: [PATCH] Remove -fno-semantic-interposition for cross-compilation compatibility
+
+The -fno-semantic-interposition flag is not supported by older GCC versions
+used in cross-compilation toolchains. Remove it to fix compilation errors.
+
+Signed-off-by: Buildroot User <buildroot@localhost>
+---
+ Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index 71ff216..8e6ec57 100644
+--- a/Makefile
++++ b/Makefile
+@@ -114,7 +114,7 @@ ifndef DEBUG
+ 	# Don't hobble GCC just for the sake of being interposable
+ 	ifeq "$(CC_IS_CLANG)" "0"
+ 		# Fun fact: apparently the default on Clang ;).
+-		EXTRA_CFLAGS+=-fno-semantic-interposition
++		# EXTRA_CFLAGS+=-fno-semantic-interposition
+ 	endif
+ 	# Enable loop unrolling & vectorization in the hope it'll do something smart with our pixel loops
+ 	EXTRA_CFLAGS+=-ftree-vectorize

@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Marc Lainez <marc.lainez@gmail.com>
+Date: Wed, 25 Dec 2025 14:30:00 +0100
+Subject: [PATCH] mediatek: Fix missing include paths in EMI, HWTCON and LED
+ drivers
+
+The MediaTek EMI, HWTCON and LED drivers fail to compile due to missing
+header files. Add the necessary include paths to their Makefiles to
+resolve compilation errors for the mt8512 platform.
+
+This fixes errors such as:
+  fatal error: <header>.h: No such file or directory
+
+Signed-off-by: Marc Lainez <marc.lainez@gmail.com>
+---
+ drivers/misc/mediatek/emi/mt8512/Makefile | 1 +
+ drivers/misc/mediatek/hwtcon/Makefile     | 1 +
+ drivers/misc/mediatek/leds/Makefile       | 1 +
+ 3 files changed, 3 insertions(+)
+
+diff --git a/drivers/misc/mediatek/emi/mt8512/Makefile b/drivers/misc/mediatek/emi/mt8512/Makefile
+--- a/drivers/misc/mediatek/emi/mt8512/Makefile
++++ b/drivers/misc/mediatek/emi/mt8512/Makefile
+@@ -12,6 +12,7 @@
+ # GNU General Public License for more details.
+ #
+
++ccflags-y += -I$(srctree)/drivers/misc/mediatek/emi/$(MTK_PLATFORM)
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/emi/
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/emi/submodule_common
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/dramc
+diff --git a/drivers/misc/mediatek/hwtcon/Makefile b/drivers/misc/mediatek/hwtcon/Makefile
+--- a/drivers/misc/mediatek/hwtcon/Makefile
++++ b/drivers/misc/mediatek/hwtcon/Makefile
+@@ -1,3 +1,4 @@
++ccflags-y += -I$(srctree)/drivers/misc/mediatek/hwtcon
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/hwtcon/hal
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/pmic/fiti
+ ccflags-y += -I$(srctree)/include/soc
+diff --git a/drivers/misc/mediatek/leds/Makefile b/drivers/misc/mediatek/leds/Makefile
+--- a/drivers/misc/mediatek/leds/Makefile
++++ b/drivers/misc/mediatek/leds/Makefile
+@@ -12,6 +12,7 @@
+ # GNU General Public License for more details.
+ #
+
++ccflags-y += -I$(srctree)/drivers/misc/mediatek/leds
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/leds/$(MTK_PLATFORM)
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/include
+
+--
+2.34.1
