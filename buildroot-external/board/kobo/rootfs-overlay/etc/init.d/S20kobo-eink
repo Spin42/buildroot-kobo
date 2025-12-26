@@ -1,0 +1,227 @@
+#!/bin/sh
+#
+# Copy e-ink display binaries from original Kobo partition and initialize display
+#
+
+KOBO_PARTITION="/dev/mmcblk0p10"
+INIT_BIN_PARTITION="/dev/mmcblk0p8"
+MOUNT_POINT="/tmp/kobo-mount"
+INIT_BIN_MOUNT="/data/init_bin"
+MARKER_FILE="/var/lib/kobo-eink-copied"
+
+# Binaries to copy
+EINK_BINARIES="mdpd"  # in /usr/bin
+SBIN_BINARIES="nvram_daemon"  # in /sbin
+KOBO_PICKEL_PATH="/usr/local/Kobo/pickel"
+SCRIPTS="ntx_check_regal_dev.sh"
+NVRAM_LIBS="libnvram.so libnvram_custom.so"  # in /lib/libnvram
+
+start() {
+    # Check if already copied
+    if [ -f "$MARKER_FILE" ]; then
+        echo "E-ink binaries already copied, starting services..."
+        start_eink_services
+        return 0
+    fi
+
+    echo "Copying e-ink display binaries from original Kobo partition..."
+
+    # Create mount point
+    mkdir -p "$MOUNT_POINT"
+
+    # Wait for device to be available
+    TIMEOUT=30
+    while [ $TIMEOUT -gt 0 ]; do
+        if [ -b "$KOBO_PARTITION" ]; then
+            echo "Kobo partition $KOBO_PARTITION found"
+            break
+        fi
+        echo "Waiting for $KOBO_PARTITION... ($TIMEOUT seconds left)"
+        sleep 1
+        TIMEOUT=$((TIMEOUT - 1))
+    done
+
+    if [ ! -b "$KOBO_PARTITION" ]; then
+        echo "ERROR: Kobo partition $KOBO_PARTITION not found"
+        return 1
+    fi
+
+    # Try to mount with retries
+    RETRIES=10
+    while [ $RETRIES -gt 0 ]; do
+        if mount -o ro "$KOBO_PARTITION" "$MOUNT_POINT" 2>/dev/null; then
+            echo "Kobo partition mounted successfully"
+            break
+        fi
+        echo "Mount failed, retrying... ($RETRIES attempts left)"
+        sleep 1
+        RETRIES=$((RETRIES - 1))
+    done
+
+    if ! mountpoint -q "$MOUNT_POINT"; then
+        echo "ERROR: Failed to mount Kobo partition"
+        return 1
+    fi
+
+    # Copy e-ink binaries
+    for binary in $EINK_BINARIES; do
+        if [ -f "$MOUNT_POINT/usr/bin/$binary" ]; then
+            echo "Copying $binary..."
+            cp "$MOUNT_POINT/usr/bin/$binary" /usr/bin/
+            chmod +x "/usr/bin/$binary"
+        else
+            echo "Warning: $binary not found in $MOUNT_POINT/usr/bin/"
+        fi
+    done
+
+    # Copy sbin binaries
+    for binary in $SBIN_BINARIES; do
+        if [ -f "$MOUNT_POINT/sbin/$binary" ]; then
+            echo "Copying $binary..."
+            cp "$MOUNT_POINT/sbin/$binary" /sbin/
+            chmod +x "/sbin/$binary"
+        else
+            echo "Warning: $binary not found in $MOUNT_POINT/sbin/"
+        fi
+    done
+
+    # Copy pickel
+    if [ -f "$MOUNT_POINT$KOBO_PICKEL_PATH" ]; then
+        echo "Copying pickel..."
+        mkdir -p /usr/local/Kobo
+        cp "$MOUNT_POINT$KOBO_PICKEL_PATH" /usr/local/Kobo/
+        chmod +x /usr/local/Kobo/pickel
+    else
+        echo "Warning: pickel not found at $MOUNT_POINT$KOBO_PICKEL_PATH"
+    fi
+
+    # Copy scripts
+    for script in $SCRIPTS; do
+        if [ -f "$MOUNT_POINT/etc/init.d/$script" ]; then
+            echo "Copying $script..."
+            cp "$MOUNT_POINT/etc/init.d/$script" /usr/libexec/
+            chmod +x "/usr/libexec/$script"
+        else
+            echo "Warning: $script not found"
+        fi
+    done
+
+    # Copy nvram libraries
+    if [ -d "$MOUNT_POINT/lib/libnvram" ]; then
+        echo "Copying nvram libraries..."
+        mkdir -p /lib/libnvram
+        for lib in $NVRAM_LIBS; do
+            if [ -f "$MOUNT_POINT/lib/libnvram/$lib" ]; then
+                echo "Copying $lib..."
+                cp "$MOUNT_POINT/lib/libnvram/$lib" /lib/libnvram/
+                chmod 755 "/lib/libnvram/$lib"
+            else
+                echo "Warning: $lib not found in $MOUNT_POINT/lib/libnvram/"
+            fi
+        done
+    else
+        echo "Warning: /lib/libnvram directory not found"
+    fi
+
+    # Unmount
+    umount "$MOUNT_POINT"
+    rmdir "$MOUNT_POINT"
+
+    # Mark as copied
+    touch "$MARKER_FILE"
+    echo "E-ink binaries copied successfully"
+
+    # Start services
+    start_eink_services
+}
+
+start_eink_services() {
+    echo "Starting e-ink display services..."
+
+    # Mount init_bin partition (read-only)
+    if [ -b "$INIT_BIN_PARTITION" ]; then
+        mkdir -p "$INIT_BIN_MOUNT"
+        if mount -o ro "$INIT_BIN_PARTITION" "$INIT_BIN_MOUNT" 2>/dev/null; then
+            echo "Mounted $INIT_BIN_PARTITION to $INIT_BIN_MOUNT"
+            sync
+        else
+            echo "Warning: Failed to mount $INIT_BIN_PARTITION"
+        fi
+    fi
+
+    # Run regal device check if available
+    if [ -x /usr/libexec/ntx_check_regal_dev.sh ]; then
+        echo "Running ntx_check_regal_dev.sh..."
+        /usr/libexec/ntx_check_regal_dev.sh
+    fi
+
+    # Start mdpd daemon if available
+    if [ -x /usr/bin/mdpd ]; then
+        echo "Starting mdpd daemon..."
+        start-stop-daemon -S -b -x /usr/bin/mdpd -- -f
+        echo "Waiting 0.5s for mdpd to initialize..."
+        sleep 0.5
+    else
+        echo "Warning: mdpd not found"
+    fi
+
+    # Create nvram directory and start daemon
+    if [ -x /sbin/nvram_daemon ]; then
+        mkdir -p /data/nvram
+        echo "Starting nvram_daemon..."
+        export LD_LIBRARY_PATH=/lib/libnvram:$LD_LIBRARY_PATH
+        /sbin/nvram_daemon &
+    else
+        echo "Warning: nvram_daemon not found"
+    fi
+
+    # Initialize display with pickel
+    if [ -x /usr/local/Kobo/pickel ]; then
+        echo "Initializing e-ink display with pickel..."
+        /usr/local/Kobo/pickel init
+	      fbink -c -f
+	      fbink "Welcome to buildroot!"
+    else
+        echo "Warning: pickel not found"
+    fi
+
+    echo "E-ink display initialization complete"
+}
+
+stop() {
+    echo "Stopping e-ink display services..."
+
+    # Stop daemons
+    killall mdpd 2>/dev/null
+    killall nvram_daemon 2>/dev/null
+
+    # Unmount init_bin if mounted
+    if mountpoint -q "$INIT_BIN_MOUNT"; then
+        umount "$INIT_BIN_MOUNT"
+    fi
+
+    return 0
+}
+
+restart() {
+    stop
+    sleep 1
+    start_eink_services
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart|reload)
+        restart
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|reload}"
+        exit 1
+esac
+
+exit $?
