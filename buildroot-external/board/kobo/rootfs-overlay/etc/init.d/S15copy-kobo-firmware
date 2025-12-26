@@ -1,0 +1,128 @@
+#!/bin/sh
+#
+# Copy WiFi/BT firmware from original Kobo partition on first boot
+#
+
+MARKER_FILE="/var/lib/kobo-firmware-copied"
+KOBO_PARTITION="/dev/mmcblk0p10"
+MOUNT_POINT="/mnt/kobo-original"
+FIRMWARE_DIR="/lib/firmware"
+
+start() {
+    # Check if firmware already copied
+    if [ -f "$MARKER_FILE" ]; then
+        echo "Kobo firmware already copied, skipping..."
+        return 0
+    fi
+
+    echo "Copying firmware from original Kobo partition..."
+
+    # Wait for device to be available (max 30 seconds)
+    TIMEOUT=30
+    while [ $TIMEOUT -gt 0 ]; do
+        if [ -b "$KOBO_PARTITION" ]; then
+            echo "$KOBO_PARTITION is now available"
+            break
+        fi
+        echo "Waiting for $KOBO_PARTITION to be available... ($TIMEOUT seconds left)"
+        sleep 1
+        TIMEOUT=$((TIMEOUT - 1))
+    done
+
+    if [ ! -b "$KOBO_PARTITION" ]; then
+        echo "Timeout: $KOBO_PARTITION not available after 30 seconds"
+        ls -la /dev/mmcblk* 2>&1
+        return 1
+    fi
+
+    # Create mount point
+    mkdir -p "$MOUNT_POINT"
+
+    # Try to mount with retries (device may not be ready yet)
+    MOUNT_TIMEOUT=10
+    MOUNTED=0
+    while [ $MOUNT_TIMEOUT -gt 0 ]; do
+        if mount -o ro "$KOBO_PARTITION" "$MOUNT_POINT" 2>/dev/null; then
+            MOUNTED=1
+            echo "$KOBO_PARTITION mounted successfully"
+            break
+        fi
+        echo "Mount attempt failed, retrying... ($MOUNT_TIMEOUT attempts left)"
+        sleep 1
+        MOUNT_TIMEOUT=$((MOUNT_TIMEOUT - 1))
+    done
+
+    if [ $MOUNTED -eq 0 ]; then
+        echo "Failed to mount $KOBO_PARTITION after retries"
+        rmdir "$MOUNT_POINT"
+        return 1
+    fi
+
+    # Check if firmware directory exists on original partition
+    if [ ! -d "$MOUNT_POINT/lib/firmware" ]; then
+        echo "Firmware directory not found on original partition"
+        umount "$MOUNT_POINT"
+        return 1
+    fi
+
+    # Copy firmware files and subdirectories recursively
+    echo "Copying firmware files and directories..."
+    cp -ar "$MOUNT_POINT/lib/firmware/"* "$FIRMWARE_DIR/" 2>/dev/null
+
+    # Verify copy was successful
+    if [ $? -ne 0 ]; then
+        echo "Warning: Some firmware files may not have been copied"
+    fi
+
+    # Copy WMT binaries
+    echo "Copying WMT binaries..."
+    if [ -d "$MOUNT_POINT/usr/bin" ]; then
+        cp -a "$MOUNT_POINT/usr/bin/wmt_"* /usr/bin/ 2>/dev/null
+        if [ $? -eq 0 ]; then
+            chmod +x /usr/bin/wmt_*
+            echo "WMT binaries copied successfully"
+        else
+            echo "Warning: WMT binaries not found or failed to copy"
+        fi
+    fi
+
+    # Copy WMT configuration files if they exist
+    echo "Checking for WMT configuration files..."
+    if [ -d "$MOUNT_POINT/etc" ]; then
+        cp -ar "$MOUNT_POINT/etc/"*wmt* /etc/ 2>/dev/null
+        cp -ar "$MOUNT_POINT/etc/"*WMT* /etc/ 2>/dev/null
+    fi
+
+    # Copy Wireless configuration directory
+    echo "Copying Wireless configuration..."
+    if [ -d "$MOUNT_POINT/etc/Wireless" ]; then
+        mkdir -p /etc/Wireless
+        cp -ar "$MOUNT_POINT/etc/Wireless/"* /etc/Wireless/ 2>/dev/null
+        echo "Wireless configuration copied"
+    fi
+
+    # Unmount partition
+    umount "$MOUNT_POINT"
+    rmdir "$MOUNT_POINT"
+
+    # Create marker file
+    mkdir -p "$(dirname "$MARKER_FILE")"
+    touch "$MARKER_FILE"
+
+    echo "Firmware copy completed successfully"
+    return 0
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop|restart|reload)
+        # Nothing to do
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|reload}"
+        exit 1
+esac
+
+exit $?
