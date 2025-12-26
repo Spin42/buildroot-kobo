@@ -39,4 +39,56 @@ define LINUX_EXTRACT_CMDS
 	fi
 endef
 
+# Build connectivity drivers (wifi & bt) after the kernel
+# Each driver subdirectory has its own Makefile and must be built separately
+# Order matters: wmt_mt66xx -> adapter_mt66xx -> gen4m_mt66xx (depends on adapter) -> bt_driver
+define LINUX_BUILD_CONNECTIVITY_CMDS
+	$(Q)if [ -d "$(@D)/connectivity/wmt_mt66xx" ]; then \
+		$(LINUX_MAKE_ENV) $(MAKE) $(LINUX_MAKE_FLAGS) \
+			-C $(@D) M=$(@D)/connectivity/wmt_mt66xx modules; \
+	fi
+	$(Q)if [ -d "$(@D)/connectivity/wlan_driver/adapter_mt66xx" ]; then \
+		$(LINUX_MAKE_ENV) $(MAKE) $(LINUX_MAKE_FLAGS) \
+			-C $(@D) M=$(@D)/connectivity/wlan_driver/adapter_mt66xx modules \
+			KCPPFLAGS="-I$(@D)/connectivity/wmt_mt66xx/common_main/include -I$(@D)/connectivity/wmt_mt66xx/common_main/linux/include -I$(@D)/connectivity/wmt_mt66xx/debug_utility -I$(@D)/drivers/misc/mediatek/include/mt-plat" \
+			KBUILD_EXTRA_SYMBOLS=$(@D)/connectivity/wmt_mt66xx/Module.symvers; \
+	fi
+	$(Q)if [ -d "$(@D)/connectivity/wlan_driver/gen4m_mt66xx" ]; then \
+		$(LINUX_MAKE_ENV) $(MAKE) $(LINUX_MAKE_FLAGS) \
+			-C $(@D) M=$(@D)/connectivity/wlan_driver/gen4m_mt66xx modules \
+			TARGET_PLATFORM=mt8113 \
+			MODULE_NAME=wlan_drv_gen4m \
+			KBUILD_EXTRA_SYMBOLS="$(@D)/connectivity/wmt_mt66xx/Module.symvers $(@D)/connectivity/wlan_driver/adapter_mt66xx/Module.symvers"; \
+	fi
+	$(Q)if [ -d "$(@D)/connectivity/bt_driver/mt66xx" ]; then \
+		$(LINUX_MAKE_ENV) $(MAKE) $(LINUX_MAKE_FLAGS) \
+			-C $(@D) M=$(@D)/connectivity/bt_driver/mt66xx modules \
+			CONNECTIVITY_SRC=$(@D)/connectivity \
+			KERNEL_VER=$(LINUX_VERSION) \
+			KCPPFLAGS="-I$(@D)/drivers/misc/mediatek/include/mt-plat" \
+			KBUILD_EXTRA_SYMBOLS=$(@D)/connectivity/wmt_mt66xx/Module.symvers; \
+	fi
+endef
+
+LINUX_POST_BUILD_HOOKS += LINUX_BUILD_CONNECTIVITY_CMDS
+
+# Install connectivity modules to target in wmt_loader expected directory
+define LINUX_INSTALL_CONNECTIVITY_MODULES
+	$(Q)mkdir -p $(TARGET_DIR)/drivers/mt8113t-ntx/mt66xx
+	$(Q)if [ -d "$(@D)/connectivity/wmt_mt66xx" ]; then \
+		cp -f $(@D)/connectivity/wmt_mt66xx/*.ko $(TARGET_DIR)/drivers/mt8113t-ntx/mt66xx/ 2>/dev/null || true; \
+	fi
+	$(Q)if [ -d "$(@D)/connectivity/wlan_driver/adapter_mt66xx" ]; then \
+		cp -f $(@D)/connectivity/wlan_driver/adapter_mt66xx/*.ko $(TARGET_DIR)/drivers/mt8113t-ntx/mt66xx/ 2>/dev/null || true; \
+	fi
+	$(Q)if [ -d "$(@D)/connectivity/wlan_driver/gen4m_mt66xx" ]; then \
+		cp -f $(@D)/connectivity/wlan_driver/gen4m_mt66xx/*.ko $(TARGET_DIR)/drivers/mt8113t-ntx/mt66xx/ 2>/dev/null || true; \
+	fi
+	$(Q)if [ -d "$(@D)/connectivity/bt_driver/mt66xx" ]; then \
+		cp -f $(@D)/connectivity/bt_driver/mt66xx/*.ko $(TARGET_DIR)/drivers/mt8113t-ntx/mt66xx/ 2>/dev/null || true; \
+	fi
+endef
+
+LINUX_POST_INSTALL_TARGET_HOOKS += LINUX_INSTALL_CONNECTIVITY_MODULES
+
 endif
