@@ -1,0 +1,158 @@
+#!/bin/sh
+#
+# Initialize WiFi hardware
+#
+
+MODULE_DIR="/drivers/mt8113t-ntx/mt66xx"
+FIRMWARE_DIR="/lib/firmware"
+SYSTEM_FIRMWARE_DIR="/system/etc/firmware"
+
+start() {
+    echo "Starting WiFi initialization..."
+
+    # Mount configfs and debugfs if not already mounted (required by MediaTek drivers)
+    if ! mountpoint -q /sys/kernel/config; then
+        echo "Mounting configfs..."
+        mount -t configfs none /sys/kernel/config
+    fi
+
+    if ! mountpoint -q /sys/kernel/debug; then
+        echo "Mounting debugfs..."
+        mount -t debugfs none /sys/kernel/debug
+    fi
+
+    # Create symlink for firmware directory if needed
+    if [ ! -e "$SYSTEM_FIRMWARE_DIR" ]; then
+        mkdir -p "$(dirname "$SYSTEM_FIRMWARE_DIR")"
+        ln -sf "$FIRMWARE_DIR" "$SYSTEM_FIRMWARE_DIR"
+    fi
+
+    # Step 1: Load ONLY wmt_drv (for /dev/wmtdetect)
+    echo "Loading WMT driver..."
+    if ! insmod "$MODULE_DIR/wmt_drv.ko"; then
+        echo "Failed to load wmt_drv module"
+        return 1
+    fi
+
+    # Wait for /dev/wmtdetect to appear
+    echo "Waiting for /dev/wmtdetect..."
+    TIMEOUT=10
+    while [ $TIMEOUT -gt 0 ]; do
+        if [ -e /dev/wmtdetect ]; then
+            echo "/dev/wmtdetect is ready"
+            break
+        fi
+        sleep 1
+        TIMEOUT=$((TIMEOUT - 1))
+    done
+
+    if [ ! -e /dev/wmtdetect ]; then
+        echo "ERROR: /dev/wmtdetect did not appear"
+        rmmod wmt_drv
+        return 1
+    fi
+
+    # Step 2: Run wmt_loader
+    # wmt_loader does hardware init AND loads all other modules automatically:
+    # - wmt_chrdev_wifi
+    # - wlan_drv_gen4m
+    # - wmt_cdev_bt
+    if [ -x /usr/bin/wmt_loader ]; then
+        echo "Running wmt_loader (will auto-load all modules)..."
+        /usr/bin/wmt_loader
+        echo "wmt_loader completed successfully"
+    else
+        echo "ERROR: wmt_loader not found"
+        rmmod wmt_drv
+        return 1
+    fi
+
+    # Wait for /dev/stpwmt to appear (created by wmt_loader)
+    echo "Waiting for /dev/stpwmt..."
+    TIMEOUT=10
+    while [ $TIMEOUT -gt 0 ]; do
+        if [ -e /dev/stpwmt ]; then
+            echo "/dev/stpwmt is ready"
+            break
+        fi
+        sleep 1
+        TIMEOUT=$((TIMEOUT - 1))
+    done
+
+    if [ ! -e /dev/stpwmt ]; then
+        echo "WARNING: /dev/stpwmt did not appear"
+    fi
+
+    # Step 3: Start wmt_launcher daemon for firmware loading
+    if [ -x /usr/bin/wmt_launcher ]; then
+        echo "Starting wmt_launcher daemon..."
+        # Start in background with firmware path (mode auto-detected)
+        /usr/bin/wmt_launcher -p "$FIRMWARE_DIR" &
+
+        # Wait for wmt_launcher to initialize
+        sleep 2
+
+        # Enable WiFi by writing to wmtWifi device
+        echo "Enabling WiFi interface..."
+        if [ -e /dev/wmtWifi ]; then
+            echo 1 > /dev/wmtWifi
+            echo "WiFi enabled via /dev/wmtWifi"
+        else
+            echo "Warning: /dev/wmtWifi not found"
+        fi
+
+        # Wait for interface to appear
+        sleep 2
+
+        if ip link show wlan0 >/dev/null 2>&1; then
+            echo "wlan0 interface is available"
+            ip link set wlan0 up
+        else
+            echo "Warning: wlan0 interface not found"
+        fi
+    else
+        echo "wmt_launcher not found"
+    fi
+
+    return 0
+}
+
+stop() {
+    echo "Stopping WiFi..."
+
+    # Kill wmt_launcher daemon
+    killall wmt_launcher 2>/dev/null
+
+    # Bring down interface
+    ip link set wlan0 down 2>/dev/null
+
+    # Unload modules in reverse order
+    rmmod wlan_drv_gen4m 2>/dev/null
+    rmmod wmt_chrdev_wifi 2>/dev/null
+    rmmod wmt_drv 2>/dev/null
+
+    return 0
+}
+
+restart() {
+    stop
+    sleep 2
+    start
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart|reload)
+        restart
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|reload}"
+        exit 1
+esac
+
+exit $?
