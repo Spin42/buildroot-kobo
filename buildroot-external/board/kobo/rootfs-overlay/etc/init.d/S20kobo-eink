@@ -180,7 +180,7 @@ start_eink_services() {
         echo "Initializing e-ink display with pickel..."
         /usr/local/Kobo/pickel init
 	      fbink -c -f
-	      fbink "Welcome to buildroot!"
+	      fbink -x 2 -y 2 "Welcome to buildroot!"
     else
         echo "Warning: pickel not found"
     fi
