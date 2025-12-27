@@ -15,7 +15,7 @@ This system is intended to be used alongside the existing Kobo system because it
 **Currently supported devices:**
 - **Kobo Clara Colour** (with Secure Boot)
 
-⚠️ **Important:** The Kobo Clara Colour uses Secure Boot, which requires a **custom init script** to properly boot into this system. Make sure to use the appropriate init script for secure boot devices.
+⚠️ **Important:** The Kobo Clara Colour uses Secure Boot, which requires a **custom init script** to properly boot into this system. Make sure to use the appropriate init script for secure boot devices. Check [kobo-init](https://github.com/Spin42/kobo-init) for an example.
 
 ### Device Limitations
 
